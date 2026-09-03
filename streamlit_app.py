@@ -25,7 +25,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v09_responsive_zoom.py"""
+    """Allow local execution with: py TaiSai_Simulator_v10_kakao_landscape_zoom.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -46,24 +46,109 @@ st.set_page_config(
 )
 
 
-def enable_mobile_pinch_zoom() -> None:
-    """Ensure mobile browsers allow user pinch zoom even when the host page's viewport is restrictive."""
+def configure_mobile_browser() -> None:
+    """Configure viewport/theme and add a KakaoTalk in-app-browser pinch-zoom fallback.
+
+    KakaoTalk opens links inside an embedded WebView. Some versions do not expose the
+    browser's native page pinch zoom even when user-scalable=yes. In that case we
+    implement a two-finger zoom on the Streamlit content itself while in landscape.
+    """
     components.html(
         """
         <script>
         (function () {
           try {
-            const doc = window.parent.document;
-            let meta = doc.querySelector('meta[name=\"viewport\"]');
-            if (!meta) {
-              meta = doc.createElement('meta');
-              meta.name = 'viewport';
-              doc.head.appendChild(meta);
+            const w = window.parent;
+            const doc = w.document;
+
+            // 1) Ask ordinary mobile browsers to allow native pinch zoom.
+            let viewport = doc.querySelector('meta[name="viewport"]');
+            if (!viewport) {
+              viewport = doc.createElement('meta');
+              viewport.name = 'viewport';
+              doc.head.appendChild(viewport);
             }
-            meta.setAttribute('content', 'width=device-width, initial-scale=1.0, minimum-scale=0.25, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover');
+            viewport.setAttribute(
+              'content',
+              'width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover'
+            );
+
+            // 2) Prevent Android/WebView automatic darkening of the casino table/dice.
+            let scheme = doc.querySelector('meta[name="color-scheme"]');
+            if (!scheme) {
+              scheme = doc.createElement('meta');
+              scheme.name = 'color-scheme';
+              doc.head.appendChild(scheme);
+            }
+            scheme.setAttribute('content', 'light only');
+            doc.documentElement.style.colorScheme = 'only light';
             doc.documentElement.style.touchAction = 'pan-x pan-y pinch-zoom';
             doc.body.style.touchAction = 'pan-x pan-y pinch-zoom';
-          } catch (e) { console.log(e); }
+
+            const ua = (w.navigator && w.navigator.userAgent) ? w.navigator.userAgent : '';
+            if (!/KAKAOTALK/i.test(ua)) return;
+
+            // Native page zoom is not reliable in KakaoTalk WebView. Add an app-level
+            // two-finger zoom fallback, only in landscape where this simulator is used.
+            if (!w.__taisaiKakaoZoom) {
+              const state = {
+                scale: 1.0,
+                startScale: 1.0,
+                startDistance: 0,
+                minScale: 0.75,
+                maxScale: 2.75,
+              };
+              w.__taisaiKakaoZoom = state;
+
+              const distance = (touches) => {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                return Math.hypot(dx, dy);
+              };
+
+              const target = () => doc.querySelector('.block-container');
+
+              const applyScale = (value) => {
+                state.scale = Math.max(state.minScale, Math.min(state.maxScale, value));
+                const el = target();
+                if (!el) return;
+                // Chromium/WebView supports CSS zoom and it keeps links/buttons clickable.
+                el.style.setProperty('zoom', String(state.scale), 'important');
+                el.style.setProperty('transform-origin', 'top left', 'important');
+                doc.documentElement.style.setProperty('overflow-x', 'auto', 'important');
+                doc.body.style.setProperty('overflow-x', 'auto', 'important');
+                const view = doc.querySelector('[data-testid="stAppViewContainer"]');
+                if (view) view.style.setProperty('overflow', 'auto', 'important');
+              };
+
+              doc.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2 && w.matchMedia('(orientation: landscape)').matches) {
+                  state.startDistance = distance(e.touches);
+                  state.startScale = state.scale;
+                }
+              }, {passive: false, capture: true});
+
+              doc.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && state.startDistance > 0 && w.matchMedia('(orientation: landscape)').matches) {
+                  e.preventDefault();
+                  const ratio = distance(e.touches) / state.startDistance;
+                  applyScale(state.startScale * ratio);
+                }
+              }, {passive: false, capture: true});
+
+              doc.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) state.startDistance = 0;
+              }, {passive: true, capture: true});
+
+              // Re-apply after Streamlit rerenders.
+              const observer = new MutationObserver(() => {
+                if (state.scale !== 1.0) applyScale(state.scale);
+              });
+              observer.observe(doc.body, {childList: true, subtree: true});
+            }
+          } catch (e) {
+            console.log('TaiSai mobile configuration:', e);
+          }
         })();
         </script>
         """,
@@ -72,7 +157,7 @@ def enable_mobile_pinch_zoom() -> None:
     )
 
 
-enable_mobile_pinch_zoom()
+configure_mobile_browser()
 
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_CAPITAL = 200_000
@@ -501,8 +586,9 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        :root {{ color-scheme: light !important; }}
+        :root {{ color-scheme: only light !important; }}
         html, body, [data-testid="stAppViewContainer"], .stApp {{
+            color-scheme: only light !important;
             background: {COLORS['page_bg']} !important;
         }}
         html, body {{
@@ -756,7 +842,16 @@ def inject_css() -> None:
         .bet-visual * {{ color: #0F172A !important; -webkit-text-fill-color: #0F172A !important; }}
 
         /* 실제 주사위처럼 보이는 SVG */
-        .dice-svg {{ display: inline-block; vertical-align: middle; flex: 0 0 auto; }}
+        .dice-svg {{
+            display: inline-block; vertical-align: middle; flex: 0 0 auto;
+            color-scheme: only light !important;
+            forced-color-adjust: none !important;
+            filter: none !important;
+            mix-blend-mode: normal !important;
+            background: #FFFFFF !important;
+        }}
+        .dice-svg rect {{ fill:#FFFFFF !important; stroke:#475569 !important; forced-color-adjust:none !important; }}
+        .dice-svg circle {{ fill:#000000 !important; stroke:none !important; forced-color-adjust:none !important; }}
         .dice-xs {{ width: 18px; height: 18px; }}
         .dice-sm {{ width: 25px; height: 25px; }}
         .dice-triple {{ width: 24px; height: 24px; }}
@@ -1033,18 +1128,18 @@ def inject_css() -> None:
             .block-container {{
                 width:100% !important; max-width:100% !important;
                 padding:.28rem .28rem .38rem .28rem !important;
-                overflow-x:hidden !important;
+                overflow-x:auto !important;
             }}
             html, body, .stApp, [data-testid="stAppViewContainer"] {{
-                width:100% !important; max-width:100% !important; overflow-x:hidden !important;
+                width:100% !important; max-width:100% !important; overflow-x:auto !important;
             }}
 
             /* 모바일에서는 실제 화면의 짧은 변(vmin)을 기준으로 글자 크기를 정해
                가로모드에서도 금액 숫자가 카드 밖으로 잘리지 않게 합니다. */
             .top-title {{ font-size:clamp(15px, 4.1vmin, 24px) !important; white-space:nowrap; }}
             .metric-card {{
-                height:56px !important; min-height:56px !important; max-height:56px !important;
-                padding:6px 7px !important; border-radius:8px !important; overflow:hidden !important;
+                height:64px !important; min-height:64px !important; max-height:64px !important;
+                padding:7px 7px !important; border-radius:8px !important; overflow:hidden !important;
             }}
             .metric-label {{ font-size:clamp(9px, 2.25vmin, 12px) !important; line-height:1 !important; }}
             .metric-value {{ font-size:clamp(14px, 3.65vmin, 20px) !important; line-height:1.15 !important; letter-spacing:-.02em; }}
@@ -1069,6 +1164,30 @@ def inject_css() -> None:
             }}
             .st-key-game_board [class*="st-key-row_"] {{
                 width:100% !important; max-width:100% !important; overflow:hidden !important;
+            }}
+        }}
+
+
+        /* 세로모드는 기능을 억지로 재배치하지 않고 가로모드 전환을 안내합니다.
+           현장 테이블 비율/위치를 유지하는 것이 이 시뮬레이터의 목적입니다. */
+        @media (max-width: 900px) and (orientation: portrait) {{
+            body::after {{
+                content: "↻  가로모드로 돌려주세요\\A이 시뮬레이터는 가로모드에 최적화되어 있습니다.";
+                white-space: pre-line;
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+                padding: 24px;
+                box-sizing: border-box;
+                background: #0F172A;
+                color: #F8FAFC;
+                font-size: 20px;
+                font-weight: 800;
+                line-height: 1.7;
             }}
         }}
         </style>
@@ -1255,12 +1374,12 @@ def dice_svg(value: int, size_class: str = "dice-sm") -> str:
     }
     pip_color = "#000000"
     circles = "".join(
-        f'<circle cx="{x}" cy="{y}" r="8.5" fill="{pip_color}" />'
+        f'<circle cx="{x}" cy="{y}" r="8.5" style="fill:#000000!important" />'
         for x, y in pip_positions[value]
     )
     return (
-        f'<svg class="dice-svg {size_class}" viewBox="0 0 100 100" aria-hidden="true">'
-        '<rect x="4" y="4" width="92" height="92" rx="8" fill="#FFFFFF" stroke="#475569" stroke-width="5"/>'
+        f'<svg class="dice-svg {size_class}" viewBox="0 0 100 100" aria-hidden="true" style="background:#FFFFFF;color-scheme:only light;forced-color-adjust:none;filter:none">'
+        '<rect x="4" y="4" width="92" height="92" rx="8" style="fill:#FFFFFF!important;stroke:#475569!important" stroke-width="5"/>'
         f'{circles}</svg>'
     )
 
@@ -1583,7 +1702,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v09 responsive fit / pinch zoom / black pips)
+# 실행 (v10 Kakao landscape zoom / force-light dice)
 # ============================================================
 init_session_state()
 inject_css()
