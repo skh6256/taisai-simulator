@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def _running_inside_streamlit() -> bool:
@@ -24,7 +25,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v08_mobile_fit_black_pips.py"""
+    """Allow local execution with: py TaiSai_Simulator_v09_responsive_zoom.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -43,6 +44,35 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+def enable_mobile_pinch_zoom() -> None:
+    """Ensure mobile browsers allow user pinch zoom even when the host page's viewport is restrictive."""
+    components.html(
+        """
+        <script>
+        (function () {
+          try {
+            const doc = window.parent.document;
+            let meta = doc.querySelector('meta[name=\"viewport\"]');
+            if (!meta) {
+              meta = doc.createElement('meta');
+              meta.name = 'viewport';
+              doc.head.appendChild(meta);
+            }
+            meta.setAttribute('content', 'width=device-width, initial-scale=1.0, minimum-scale=0.25, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover');
+            doc.documentElement.style.touchAction = 'pan-x pan-y pinch-zoom';
+            doc.body.style.touchAction = 'pan-x pan-y pinch-zoom';
+          } catch (e) { console.log(e); }
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+enable_mobile_pinch_zoom()
 
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_CAPITAL = 200_000
@@ -950,36 +980,95 @@ def inject_css() -> None:
         }}
         .main-card h1, .main-card p, .main-card b {{ color: {COLORS['text']} !important; }}
 
+        /* Streamlit의 모바일 기본 동작(열 세로 쌓기)을 필요한 구역에서만 무효화합니다. */
+        .st-key-top_nav [data-testid="stHorizontalBlock"],
+        .st-key-money_row [data-testid="stHorizontalBlock"],
+        .st-key-dice_section [data-testid="stHorizontalBlock"],
+        .st-key-game_board [class*="st-key-row_"] [data-testid="stHorizontalBlock"] {{
+            display:flex !important; flex-direction:row !important; flex-wrap:nowrap !important;
+        }}
+        .st-key-top_nav [data-testid="column"],
+        .st-key-money_row [data-testid="column"],
+        .st-key-dice_section [data-testid="column"],
+        .st-key-game_board [class*="st-key-row_"] [data-testid="column"] {{
+            min-width:0 !important; width:0 !important; flex-basis:0 !important; flex-shrink:1 !important;
+            padding-left:0 !important; padding-right:0 !important;
+        }}
+
+        /* 상단 4열: 0.55 / 7.4 / 0.7 / 0.7 */
+        .st-key-top_nav [data-testid="column"]:nth-child(1) {{ flex-grow:.55 !important; }}
+        .st-key-top_nav [data-testid="column"]:nth-child(2) {{ flex-grow:7.4 !important; }}
+        .st-key-top_nav [data-testid="column"]:nth-child(3),
+        .st-key-top_nav [data-testid="column"]:nth-child(4) {{ flex-grow:.7 !important; }}
+        /* 자금 3열 */
+        .st-key-money_row [data-testid="column"] {{ flex-grow:1 !important; }}
+        /* 주사위 3 + 굴리기 */
+        .st-key-dice_section [data-testid="column"]:nth-child(1),
+        .st-key-dice_section [data-testid="column"]:nth-child(2),
+        .st-key-dice_section [data-testid="column"]:nth-child(3) {{ flex-grow:1 !important; }}
+        .st-key-dice_section [data-testid="column"]:nth-child(4) {{ flex-grow:1.05 !important; }}
+
+        /* 게임판 행 비율을 명시적으로 고정. 모바일에서도 1480px 표를 잘라 보여주는 대신 화면 폭 안에 전부 축소합니다. */
+        .st-key-row_top [data-testid="column"] {{ flex-grow:.82 !important; }}
+        .st-key-row_top [data-testid="column"]:nth-child(1),
+        .st-key-row_top [data-testid="column"]:nth-child(9),
+        .st-key-row_top [data-testid="column"]:nth-child(17) {{ flex-grow:1 !important; }}
+        .st-key-row_top [data-testid="column"]:nth-child(5),
+        .st-key-row_top [data-testid="column"]:nth-child(13) {{ flex-grow:.55 !important; }}
+
+        .st-key-row_bigsmall [data-testid="column"]:nth-child(1),
+        .st-key-row_bigsmall [data-testid="column"]:nth-child(2),
+        .st-key-row_bigsmall [data-testid="column"]:nth-child(4),
+        .st-key-row_bigsmall [data-testid="column"]:nth-child(5) {{ flex-grow:2.5 !important; }}
+        .st-key-row_bigsmall [data-testid="column"]:nth-child(3) {{ flex-grow:4.6 !important; }}
+
+        .st-key-row_total [data-testid="column"],
+        .st-key-row_domino [data-testid="column"] {{ flex-grow:1 !important; }}
+
+        .st-key-row_bottom [data-testid="column"] {{ flex-grow:1 !important; }}
+        .st-key-row_bottom [data-testid="column"]:nth-child(4),
+        .st-key-row_bottom [data-testid="column"]:nth-child(5) {{ flex-grow:3 !important; }}
+
         @media (max-width: 900px) {{
             .block-container {{
                 width:100% !important; max-width:100% !important;
-                padding-left:.32rem !important; padding-right:.32rem !important;
+                padding:.28rem .28rem .38rem .28rem !important;
+                overflow-x:hidden !important;
+            }}
+            html, body, .stApp, [data-testid="stAppViewContainer"] {{
+                width:100% !important; max-width:100% !important; overflow-x:hidden !important;
             }}
 
-            /* 게임 화면의 Streamlit columns가 세로로 쌓이지 않도록 고정.
-               화면 폭에 맞춰 한 줄 전체가 축소되고, 사용자는 브라우저 핀치 줌으로 확대할 수 있습니다. */
-            .block-container:has(.st-key-game_board) [data-testid="stHorizontalBlock"] {{
-                flex-direction:row !important; flex-wrap:nowrap !important;
+            /* 모바일에서는 실제 화면의 짧은 변(vmin)을 기준으로 글자 크기를 정해
+               가로모드에서도 금액 숫자가 카드 밖으로 잘리지 않게 합니다. */
+            .top-title {{ font-size:clamp(15px, 4.1vmin, 24px) !important; white-space:nowrap; }}
+            .metric-card {{
+                height:56px !important; min-height:56px !important; max-height:56px !important;
+                padding:6px 7px !important; border-radius:8px !important; overflow:hidden !important;
             }}
-            .block-container:has(.st-key-game_board) [data-testid="column"] {{
-                min-width:0 !important; width:auto !important; flex-shrink:1 !important;
-            }}
+            .metric-label {{ font-size:clamp(9px, 2.25vmin, 12px) !important; line-height:1 !important; }}
+            .metric-value {{ font-size:clamp(14px, 3.65vmin, 20px) !important; line-height:1.15 !important; letter-spacing:-.02em; }}
+            .metric-sub {{ font-size:clamp(8px, 1.8vmin, 10px) !important; line-height:1 !important; }}
 
-            .top-title {{ font-size:4.3vw !important; white-space:nowrap; }}
-            .metric-card {{ height:13.2vw; max-height:54px; min-height:40px; padding:1.5vw 2vw; border-radius:2vw; }}
-            .metric-label {{ font-size:2.35vw !important; }}
-            .metric-value {{ font-size:3.55vw !important; }}
-            .metric-sub {{ font-size:1.9vw !important; }}
-            .st-key-dice_section {{ margin-top:2.2vw !important; }}
-            .dice-box {{ height:14vw; max-height:55px; min-height:42px; border-radius:2vw; }}
-            .st-key-dice_section .dice-lg {{ width:10.5vw !important; height:10.5vw !important; max-width:45px; max-height:45px; }}
-            .st-key-dice_section button {{ min-height:14vw !important; max-height:55px !important; font-size:3vw !important; padding:.2rem !important; }}
-            .result-card {{ font-size:2.55vw !important; padding:1.2vw 2vw !important; }}
-            .compact-caption {{ font-size:1.95vw !important; }}
+            .st-key-top_nav {{ margin-bottom:4px !important; }}
+            .st-key-top_nav button {{ min-height:40px !important; height:40px !important; padding:.15rem !important; }}
+            .st-key-top_nav [data-testid="column"]:nth-child(2) {{ padding-left:5px !important; padding-right:5px !important; }}
+
+            .st-key-money_row [data-testid="stHorizontalBlock"],
+            .st-key-dice_section [data-testid="stHorizontalBlock"] {{ gap:4px !important; column-gap:4px !important; }}
+            .st-key-dice_section {{ margin-top:8px !important; margin-bottom:2px !important; }}
+            .dice-box {{ height:56px !important; min-height:56px !important; max-height:56px !important; border-radius:8px !important; }}
+            .st-key-dice_section .dice-lg {{ width:44px !important; height:44px !important; max-width:44px !important; max-height:44px !important; }}
+            .st-key-dice_section button {{ min-height:56px !important; height:56px !important; max-height:56px !important; font-size:clamp(12px, 3vmin, 17px) !important; padding:.2rem !important; }}
+            .result-card {{ font-size:clamp(10px, 2.5vmin, 14px) !important; padding:5px 7px !important; }}
+            .compact-caption {{ font-size:clamp(8px, 1.9vmin, 11px) !important; }}
 
             .st-key-game_board {{
                 min-width:0 !important; width:100% !important; max-width:100% !important;
-                overflow:hidden !important; margin-top:1vw !important;
+                overflow:hidden !important; margin-top:4px !important;
+            }}
+            .st-key-game_board [class*="st-key-row_"] {{
+                width:100% !important; max-width:100% !important; overflow:hidden !important;
             }}
         }}
         </style>
@@ -1280,15 +1369,17 @@ def render_decor_cell(col, text: str, instance: str, height: int = 50, kind: str
 def render_table_row(items: list[dict], row_name: str, ratios: list[float] | None = None, height: int = 50) -> None:
     if ratios is None:
         ratios = [1] * len(items)
-    cols = st.columns(ratios, gap=None)
-    for idx, (col, item) in enumerate(zip(cols, items)):
-        if item["type"] == "bet":
-            render_bet_cell(col, item["id"], f"{row_name}_{idx}", height=height)
-        else:
-            render_decor_cell(
-                col, item.get("text", ""), f"{row_name}_{idx}",
-                height=height, kind=item.get("kind", "label")
-            )
+    # 행별 key를 부여해 모바일에서도 각 열의 flex 비율을 정확히 강제할 수 있게 합니다.
+    with st.container(key=f"row_{row_name}"):
+        cols = st.columns(ratios, gap=None)
+        for idx, (col, item) in enumerate(zip(cols, items)):
+            if item["type"] == "bet":
+                render_bet_cell(col, item["id"], f"{row_name}_{idx}", height=height)
+            else:
+                render_decor_cell(
+                    col, item.get("text", ""), f"{row_name}_{idx}",
+                    height=height, kind=item.get("kind", "label")
+                )
 
 
 def B(bet_id: str) -> dict:
@@ -1373,28 +1464,30 @@ def render_metric_card(label: str, value: str, sub: str = "") -> None:
 
 
 def render_game_page() -> None:
-    # 상단 네비게이션 - 높이를 최소화
-    left, title_col, save_col, reset_col = st.columns([0.55, 7.4, 0.7, 0.7], vertical_alignment="center")
-    if left.button("←", key="back_button", help="메인화면으로 돌아가기", use_container_width=True):
-        back_dialog()
-    title_col.markdown("<div class='top-title'>🎲 다이사이</div>", unsafe_allow_html=True)
-    if save_col.button("💾", key="save_button", help="플레이 기록 저장", use_container_width=True):
-        save_dialog()
-    if reset_col.button("↻", key="reset_button", help="자본금/게임 기록 초기화", use_container_width=True):
-        reset_dialog()
+    # 상단 네비게이션 - 모바일에서도 한 줄 비율을 유지
+    with st.container(key="top_nav"):
+        left, title_col, save_col, reset_col = st.columns([0.55, 7.4, 0.7, 0.7], vertical_alignment="center")
+        if left.button("←", key="back_button", help="메인화면으로 돌아가기", use_container_width=True):
+            back_dialog()
+        title_col.markdown("<div class='top-title'>🎲 다이사이</div>", unsafe_allow_html=True)
+        if save_col.button("💾", key="save_button", help="플레이 기록 저장", use_container_width=True):
+            save_dialog()
+        if reset_col.button("↻", key="reset_button", help="자본금/게임 기록 초기화", use_container_width=True):
+            reset_dialog()
 
     # 정산 결과 총자산이 0원이면 즉시 파산 안내를 띄웁니다.
     if st.session_state.get("bankrupt_pending", False):
         bankruptcy_dialog()
 
-    # 자금 상태 - st.metric 대신 고정 색상의 작은 카드 사용
-    m1, m2, m3 = st.columns(3, gap="small")
-    with m1:
-        render_metric_card("초기 자본금", fmt_money(st.session_state.initial_capital))
-    with m2:
-        render_metric_card("보유금액", fmt_money(st.session_state.bankroll))
-    with m3:
-        render_metric_card("현재 베팅", fmt_money(total_current_bet()), f"상한 {MAX_TOTAL_BET:,}원")
+    # 자금 상태 - 모바일에서도 3칸을 한 줄에 유지하되 글자가 잘리지 않도록 고정
+    with st.container(key="money_row"):
+        m1, m2, m3 = st.columns(3, gap="small")
+        with m1:
+            render_metric_card("초기 자본금", fmt_money(st.session_state.initial_capital))
+        with m2:
+            render_metric_card("보유금액", fmt_money(st.session_state.bankroll))
+        with m3:
+            render_metric_card("현재 베팅", fmt_money(total_current_bet()), f"상한 {MAX_TOTAL_BET:,}원")
 
     # 주사위 + 굴리기 : 자금 카드와 10px 간격을 두어 별도 영역처럼 보이게 함
     with st.container(key="dice_section"):
@@ -1490,7 +1583,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v08 mobile fit / black pips)
+# 실행 (v09 responsive fit / pinch zoom / black pips)
 # ============================================================
 init_session_state()
 inject_css()
