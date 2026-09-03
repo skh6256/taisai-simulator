@@ -24,7 +24,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v07_bankruptcy_dice_layout.py"""
+    """Allow local execution with: py TaiSai_Simulator_v08_mobile_fit_black_pips.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -478,6 +478,7 @@ def inject_css() -> None:
         html, body {{
             touch-action: pan-x pan-y pinch-zoom !important;
             -webkit-text-size-adjust: 100%;
+            max-width:100% !important;
         }}
         .stApp {{
             touch-action: pan-x pan-y pinch-zoom !important;
@@ -610,15 +611,16 @@ def inject_css() -> None:
         .st-key-game_board {{
             width: 100% !important;
             max-width: 1480px !important;
-            min-width: 980px !important;
+            min-width: 0 !important;
             box-sizing: border-box !important;
             margin: 4px auto 0 auto !important;
             background: #F8FAFC !important;
-            border: 8px solid #17366D !important;
-            border-radius: 24px !important;
+            border: clamp(2px, .54cqw, 8px) solid #17366D !important;
+            border-radius: clamp(6px, 1.62cqw, 24px) !important;
             padding: 0 !important;
             overflow: hidden !important;
             touch-action: pan-x pan-y pinch-zoom !important;
+            container-type: inline-size !important;
         }}
         .st-key-game_board > div,
         .st-key-game_board [data-testid="stVerticalBlock"] {{
@@ -650,7 +652,7 @@ def inject_css() -> None:
         .st-key-game_board [class*="st-key-cell_"] {{
             position: relative !important;
             box-sizing: border-box !important;
-            border: 1.4px solid #475569 !important;
+            border: max(.35px, .095cqw) solid #475569 !important;
             border-radius: 0 !important;
             padding: 0 !important;
             margin: 0 !important;
@@ -679,11 +681,11 @@ def inject_css() -> None:
         }}
 
         /* 실제 사진의 행 높이 비율에 가깝게 설정 */
-        .st-key-game_board [class*="st-key-cell_top_"] {{ height: 68px !important; min-height: 68px !important; }}
-        .st-key-game_board [class*="st-key-cell_bigsmall_"] {{ height: 124px !important; min-height: 124px !important; }}
-        .st-key-game_board [class*="st-key-cell_total_"] {{ height: 128px !important; min-height: 128px !important; }}
-        .st-key-game_board [class*="st-key-cell_domino_"] {{ height: 64px !important; min-height: 64px !important; }}
-        .st-key-game_board [class*="st-key-cell_bottom_"] {{ height: 112px !important; min-height: 112px !important; }}
+        .st-key-game_board [class*="st-key-cell_top_"] {{ height: 4.60cqw !important; min-height: 4.60cqw !important; }}
+        .st-key-game_board [class*="st-key-cell_bigsmall_"] {{ height: 8.38cqw !important; min-height: 8.38cqw !important; }}
+        .st-key-game_board [class*="st-key-cell_total_"] {{ height: 8.65cqw !important; min-height: 8.65cqw !important; }}
+        .st-key-game_board [class*="st-key-cell_domino_"] {{ height: 4.32cqw !important; min-height: 4.32cqw !important; }}
+        .st-key-game_board [class*="st-key-cell_bottom_"] {{ height: 7.57cqw !important; min-height: 7.57cqw !important; }}
 
         /* v06: 베팅칸 표시는 HTML/SVG로 그려 폰트에 따라 주사위가 깨지는 문제를 제거 */
         .st-key-game_board [class*="st-key-visualwrap_"] {{
@@ -731,53 +733,62 @@ def inject_css() -> None:
         .dice-any {{ width: 17px; height: 17px; }}
         .dice-md {{ width: 35px; height: 35px; }}
         .dice-lg {{ width: 58px; height: 58px; }}
+
+        /* 게임판 내부의 모든 시각요소는 테이블 폭에 비례해 함께 축소/확대됩니다.
+           세로 모바일에서도 1480px 현장판 전체가 화면 가로폭 안에 들어오고, 필요할 때 핀치 줌으로 확대합니다. */
+        .st-key-game_board .dice-xs {{ width:1.22cqw; height:1.22cqw; }}
+        .st-key-game_board .dice-sm {{ width:1.69cqw; height:1.69cqw; }}
+        .st-key-game_board .dice-triple {{ width:1.62cqw; height:1.62cqw; }}
+        .st-key-game_board .dice-any {{ width:1.15cqw; height:1.15cqw; }}
+        .st-key-game_board .dice-md {{ width:2.36cqw; height:2.36cqw; }}
+        .st-key-game_board .dice-lg {{ width:3.92cqw; height:3.92cqw; }}
         .dice-row {{ display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; }}
-        .top-dice-row {{ gap:3px; }}
+        .top-dice-row {{ gap:.20cqw; }}
         .triple-stack {{
             display:flex; flex-direction:column; align-items:center; justify-content:center;
-            gap:1px; line-height:0;
+            gap:.07cqw; line-height:0;
         }}
-        .triple-stack-bottom {{ display:flex; align-items:center; justify-content:center; gap:2px; line-height:0; }}
+        .triple-stack-bottom {{ display:flex; align-items:center; justify-content:center; gap:.14cqw; line-height:0; }}
         .any-triple-stack {{
             display:flex; flex-direction:column; align-items:center; justify-content:center;
             gap:0; line-height:0;
         }}
-        .any-triple-bottom {{ display:flex; align-items:center; justify-content:center; gap:1px; line-height:0; }}
-        .domino-dice-row {{ gap:5px; }}
+        .any-triple-bottom {{ display:flex; align-items:center; justify-content:center; gap:.07cqw; line-height:0; }}
+        .domino-dice-row {{ gap:.34cqw; }}
 
         /* BIG / SMALL / ANY TRIPLE */
-        .bigsmall-symbol {{ font-family:"Noto Serif CJK KR", "Noto Serif KR", serif; font-size:3.05rem; font-weight:900; line-height:.78; }}
-        .bigsmall-range {{ font-size:.96rem; font-weight:850; margin-top:5px; }}
-        .bigsmall-en {{ font-size:.84rem; font-weight:900; margin-top:1px; }}
+        .bigsmall-symbol {{ font-family:"Noto Serif CJK KR", "Noto Serif KR", serif; font-size:3.30cqw; font-weight:900; line-height:.78; }}
+        .bigsmall-range {{ font-size:1.04cqw; font-weight:850; margin-top:.34cqw; }}
+        .bigsmall-en {{ font-size:.91cqw; font-weight:900; margin-top:.07cqw; }}
         .any-grid {{
             display:grid;
             grid-template-columns:repeat(3, 1fr);
             grid-template-rows:repeat(2, auto);
-            gap:2px 18px;
+            gap:.14cqw 1.22cqw;
             width:74%;
-            max-width:285px;
-            margin:0 auto 3px auto;
+            max-width:none;
+            margin:0 auto .20cqw auto;
         }}
         .any-item {{ display:flex; align-items:center; justify-content:center; }}
-        .any-pay {{ font-size:1.03rem; font-weight:900; line-height:1; }}
+        .any-pay {{ font-size:1.11cqw; font-weight:900; line-height:1; }}
 
         /* TOTAL: 현장판처럼 숫자 / 1 / WINS / 배당을 반드시 각각 줄바꿈 */
-        .total-num {{ font-family:Georgia, "Times New Roman", serif; font-size:2.52rem; font-weight:900; line-height:.90; }}
-        .total-small {{ font-family:Georgia, "Times New Roman", serif; font-size:1.09rem; font-weight:800; line-height:1.00; }}
-        .total-wins {{ font-size:.85rem; letter-spacing:.04em; line-height:1.05; }}
+        .total-num {{ font-family:Georgia, "Times New Roman", serif; font-size:2.72cqw; font-weight:900; line-height:.90; }}
+        .total-small {{ font-family:Georgia, "Times New Roman", serif; font-size:1.18cqw; font-weight:800; line-height:1.00; }}
+        .total-wins {{ font-size:.92cqw; letter-spacing:.04em; line-height:1.05; }}
 
         /* EVEN / ODD 및 Single */
-        .eo-text {{ font-family:Georgia, "Times New Roman", serif; font-size:2.55rem; font-weight:700; line-height:1; }}
-        .single-wrap {{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }}
+        .eo-text {{ font-family:Georgia, "Times New Roman", serif; font-size:2.76cqw; font-weight:700; line-height:1; }}
+        .single-wrap {{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.27cqw; }}
 
         /* 베팅액은 실제 표기를 방해하지 않도록 하단에 작은 칩 형태로 표시 */
         .bet-amount-chip {{
             position:absolute;
-            left:50%; bottom:3px; transform:translateX(-50%);
-            padding:2px 6px; border-radius:999px;
+            left:50%; bottom:.20cqw; transform:translateX(-50%);
+            padding:.14cqw .41cqw; border-radius:999px;
             background:#2563EB; color:#FFFFFF !important;
             -webkit-text-fill-color:#FFFFFF !important;
-            font-size:.60rem; font-weight:900; line-height:1;
+            font-size:.65cqw; font-weight:900; line-height:1;
             box-shadow:0 1px 2px rgba(0,0,0,.18);
             white-space:nowrap;
         }}
@@ -826,31 +837,31 @@ def inject_css() -> None:
         /* 도움말 ? 버튼: 우측 상단에 작게 겹쳐 표시 */
         .st-key-game_board [class*="st-key-helpwrap_"] {{
             position: absolute !important;
-            top: 4px !important;
-            right: 4px !important;
+            top: .27cqw !important;
+            right: .27cqw !important;
             z-index: 20 !important;
-            width: 20px !important;
-            height: 20px !important;
-            min-height: 20px !important;
+            width: 1.35cqw !important;
+            height: 1.35cqw !important;
+            min-height: 1.35cqw !important;
             padding: 0 !important;
             margin: 0 !important;
             gap: 0 !important;
         }}
         .st-key-game_board [class*="st-key-helpwrap_"] .stButton,
         .st-key-game_board [class*="st-key-helpwrap_"] [data-testid="stElementContainer"] {{
-            width: 20px !important;
-            height: 20px !important;
-            min-height: 20px !important;
+            width: 1.35cqw !important;
+            height: 1.35cqw !important;
+            min-height: 1.35cqw !important;
             margin: 0 !important;
             padding: 0 !important;
         }}
         .st-key-game_board [class*="st-key-helpwrap_"] button {{
-            min-height: 20px !important;
-            height: 20px !important;
-            width: 20px !important;
+            min-height: 1.35cqw !important;
+            height: 1.35cqw !important;
+            width: 1.35cqw !important;
             padding: 0 !important;
             border-radius: 999px !important;
-            font-size: .62rem !important;
+            font-size: .67cqw !important;
             font-weight: 900 !important;
             background: #111827 !important;
             color: #FFFFFF !important;
@@ -860,7 +871,7 @@ def inject_css() -> None:
         .st-key-game_board [class*="st-key-helpwrap_"] button span {{
             color: #FFFFFF !important;
             -webkit-text-fill-color: #FFFFFF !important;
-            font-size: .62rem !important;
+            font-size: .67cqw !important;
         }}
 
         /* 장식 셀 */
@@ -873,10 +884,10 @@ def inject_css() -> None:
             margin: 0;
             padding: 2px;
             overflow: hidden;
-            border: 1.4px solid #475569;
+            border: max(.35px, .095cqw) solid #475569;
             color: #0F172A !important;
             font-family: Arial, "Noto Sans KR", "Segoe UI Symbol", sans-serif;
-            font-size: .89rem;
+            font-size: .96cqw;
             font-weight: 900;
             text-align: center;
             line-height: 1.00;
@@ -888,11 +899,11 @@ def inject_css() -> None:
         }}
         .decor-red {{ background: #FF1717; border-color: #475569; color: #FFFFFF !important; }}
         .decor-label {{ background: #F8FAFC; }}
-        .decor-top {{ height: 68px; }}
-        .decor-bigsmall {{ height: 124px; }}
-        .decor-total {{ height: 128px; }}
-        .decor-domino {{ height: 64px; }}
-        .decor-bottom {{ height: 112px; }}
+        .decor-top {{ height: 4.60cqw; }}
+        .decor-bigsmall {{ height: 8.38cqw; }}
+        .decor-total {{ height: 8.65cqw; }}
+        .decor-domino {{ height: 4.32cqw; }}
+        .decor-bottom {{ height: 7.57cqw; }}
 
         /* 일반 버튼 - 브라우저/Streamlit 다크모드와 무관하게 항상 보이도록 고정 */
         button[kind="primary"] {{
@@ -940,13 +951,36 @@ def inject_css() -> None:
         .main-card h1, .main-card p, .main-card b {{ color: {COLORS['text']} !important; }}
 
         @media (max-width: 900px) {{
-            .block-container {{ padding-left: .45rem !important; padding-right: .45rem !important; }}
-            /* 세로 화면에서는 현장 테이블의 가로 구조를 유지. 브라우저 핀치 줌/가로 이동으로 확인 */
-            .st-key-game_board {{ min-width: 980px !important; width: 980px !important; max-width: 980px !important; overflow: visible !important; }}
-            .metric-card {{ height: 54px; padding: 6px 8px; }}
-            .metric-value {{ font-size: 1rem; }}
-            .dice-box {{ height: 55px; }}
-            .dice-face {{ font-size: 42px; }}
+            .block-container {{
+                width:100% !important; max-width:100% !important;
+                padding-left:.32rem !important; padding-right:.32rem !important;
+            }}
+
+            /* 게임 화면의 Streamlit columns가 세로로 쌓이지 않도록 고정.
+               화면 폭에 맞춰 한 줄 전체가 축소되고, 사용자는 브라우저 핀치 줌으로 확대할 수 있습니다. */
+            .block-container:has(.st-key-game_board) [data-testid="stHorizontalBlock"] {{
+                flex-direction:row !important; flex-wrap:nowrap !important;
+            }}
+            .block-container:has(.st-key-game_board) [data-testid="column"] {{
+                min-width:0 !important; width:auto !important; flex-shrink:1 !important;
+            }}
+
+            .top-title {{ font-size:4.3vw !important; white-space:nowrap; }}
+            .metric-card {{ height:13.2vw; max-height:54px; min-height:40px; padding:1.5vw 2vw; border-radius:2vw; }}
+            .metric-label {{ font-size:2.35vw !important; }}
+            .metric-value {{ font-size:3.55vw !important; }}
+            .metric-sub {{ font-size:1.9vw !important; }}
+            .st-key-dice_section {{ margin-top:2.2vw !important; }}
+            .dice-box {{ height:14vw; max-height:55px; min-height:42px; border-radius:2vw; }}
+            .st-key-dice_section .dice-lg {{ width:10.5vw !important; height:10.5vw !important; max-width:45px; max-height:45px; }}
+            .st-key-dice_section button {{ min-height:14vw !important; max-height:55px !important; font-size:3vw !important; padding:.2rem !important; }}
+            .result-card {{ font-size:2.55vw !important; padding:1.2vw 2vw !important; }}
+            .compact-caption {{ font-size:1.95vw !important; }}
+
+            .st-key-game_board {{
+                min-width:0 !important; width:100% !important; max-width:100% !important;
+                overflow:hidden !important; margin-top:1vw !important;
+            }}
         }}
         </style>
         """,
@@ -1121,7 +1155,7 @@ def open_bet_dialog(bet_id: str) -> None:
 
 
 def dice_svg(value: int, size_class: str = "dice-sm") -> str:
-    """Return a font-independent inline SVG die. Standard casino styling: 1 and 4 use red pips."""
+    """Return a font-independent inline SVG die with fixed black pips for light/dark browser themes."""
     pip_positions = {
         1: [(50, 50)],
         2: [(28, 28), (72, 72)],
@@ -1130,7 +1164,7 @@ def dice_svg(value: int, size_class: str = "dice-sm") -> str:
         5: [(28, 28), (72, 28), (50, 50), (28, 72), (72, 72)],
         6: [(28, 24), (72, 24), (28, 50), (72, 50), (28, 76), (72, 76)],
     }
-    pip_color = "#E11D2E" if value in (1, 4) else "#0F172A"
+    pip_color = "#000000"
     circles = "".join(
         f'<circle cx="{x}" cy="{y}" r="8.5" fill="{pip_color}" />'
         for x, y in pip_positions[value]
@@ -1456,7 +1490,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v07 bankruptcy / dice layout)
+# 실행 (v08 mobile fit / black pips)
 # ============================================================
 init_session_state()
 inject_css()
