@@ -858,6 +858,22 @@ def inject_css() -> None:
             line-height: 1.15;
         }}
         .result-card, .result-card b, .result-card span {{ color: {COLORS['text']} !important; }}
+        /* 게임 결과는 위의 굴리는 주사위 카드와 비슷한 높이로 크게 표시 */
+        .result-card-main {{
+            min-height: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 8px 14px;
+            font-size: 1.08rem;
+            line-height: 1.25;
+            font-weight: 500;
+            box-sizing: border-box;
+        }}
+        .result-card-main b {{
+            font-size: 1.12em;
+            font-weight: 850;
+        }}
         .compact-caption {{
             color: #94A3B8 !important;
             font-size: .68rem;
@@ -1311,6 +1327,18 @@ def inject_css() -> None:
             .st-key-dice_section .dice-lg {{ width:44px !important; height:44px !important; max-width:44px !important; max-height:44px !important; }}
             .st-key-dice_section button {{ min-height:56px !important; height:56px !important; max-height:56px !important; font-size:clamp(12px, 3vmin, 17px) !important; padding:.2rem !important; }}
             .result-card {{ font-size:clamp(10px, 2.5vmin, 14px) !important; padding:5px 7px !important; }}
+            .result-card-main {{
+                min-height:56px !important;
+                height:56px !important;
+                display:flex !important;
+                align-items:center !important;
+                padding:6px 10px !important;
+                font-size:clamp(13px, 3.2vmin, 18px) !important;
+                line-height:1.2 !important;
+                white-space:nowrap;
+                overflow:hidden;
+            }}
+            .result-card-main b {{ font-size:1.12em !important; }}
             .compact-caption {{ font-size:clamp(8px, 1.9vmin, 11px) !important; }}
 
             .st-key-game_board {{
@@ -1868,7 +1896,7 @@ def render_game_page() -> None:
         profit_text = f"{profit:+,}원" if st.session_state.last_round_profit is not None else "-"
         st.markdown(
             f"""
-            <div class="result-card">
+            <div class="result-card result-card-main">
               <b>게임 {st.session_state.game_no}</b> ·
               결과 <b>{st.session_state.dice[0]} · {st.session_state.dice[1]} · {st.session_state.dice[2]}</b> ·
               합계 <b>{total}</b> · 이번 판 순손익 <b>{profit_text}</b>
