@@ -25,7 +25,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v10_kakao_landscape_zoom.py"""
+    """Allow local execution with: py TaiSai_Simulator_v11_stage_pinch_zoom.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -46,22 +46,27 @@ st.set_page_config(
 )
 
 
-def configure_mobile_browser() -> None:
-    """Configure viewport/theme and add a KakaoTalk in-app-browser pinch-zoom fallback.
+def enable_mobile_pinch_zoom() -> None:
+    """Install Animation-style full-stage pinch zoom/pan on the Streamlit page.
 
-    KakaoTalk opens links inside an embedded WebView. Some versions do not expose the
-    browser's native page pinch zoom even when user-scalable=yes. In that case we
-    implement a two-finger zoom on the Streamlit content itself while in landscape.
+    Mobile behavior:
+    - Two fingers: zoom the whole Streamlit content around the pinch midpoint.
+    - One finger while zoomed: pan the enlarged content.
+    - Pinch back near 1.0x: reset position and scale.
+    - At 1.0x, ordinary one-finger page scrolling remains available.
+
+    This intentionally uses CSS transform (translate + scale), not CSS ``zoom``.
     """
     components.html(
-        """
+        r"""
         <script>
         (function () {
           try {
             const w = window.parent;
             const doc = w.document;
 
-            // 1) Ask ordinary mobile browsers to allow native pinch zoom.
+            // Keep the browser itself at 1x. Pinch zoom is handled on the
+            // Streamlit stage so every visible element scales together.
             let viewport = doc.querySelector('meta[name="viewport"]');
             if (!viewport) {
               viewport = doc.createElement('meta');
@@ -70,84 +75,223 @@ def configure_mobile_browser() -> None:
             }
             viewport.setAttribute(
               'content',
-              'width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover'
+              'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
             );
 
-            // 2) Prevent Android/WebView automatic darkening of the casino table/dice.
-            let scheme = doc.querySelector('meta[name="color-scheme"]');
-            if (!scheme) {
-              scheme = doc.createElement('meta');
-              scheme.name = 'color-scheme';
-              doc.head.appendChild(scheme);
-            }
-            scheme.setAttribute('content', 'light only');
-            doc.documentElement.style.colorScheme = 'only light';
-            doc.documentElement.style.touchAction = 'pan-x pan-y pinch-zoom';
-            doc.body.style.touchAction = 'pan-x pan-y pinch-zoom';
-
-            const ua = (w.navigator && w.navigator.userAgent) ? w.navigator.userAgent : '';
-            if (!/KAKAOTALK/i.test(ua)) return;
-
-            // Native page zoom is not reliable in KakaoTalk WebView. Add an app-level
-            // two-finger zoom fallback, only in landscape where this simulator is used.
-            if (!w.__taisaiKakaoZoom) {
+            // A Streamlit rerun recreates this component iframe. Keep one
+            // controller on the parent window so event handlers are installed once.
+            if (!w.__taisaiStagePinchZoom) {
               const state = {
                 scale: 1.0,
-                startScale: 1.0,
-                startDistance: 0,
-                minScale: 0.75,
-                maxScale: 2.75,
-              };
-              w.__taisaiKakaoZoom = state;
-
-              const distance = (touches) => {
-                const dx = touches[0].clientX - touches[1].clientX;
-                const dy = touches[0].clientY - touches[1].clientY;
-                return Math.hypot(dx, dy);
-              };
-
-              const target = () => doc.querySelector('.block-container');
-
-              const applyScale = (value) => {
-                state.scale = Math.max(state.minScale, Math.min(state.maxScale, value));
-                const el = target();
-                if (!el) return;
-                // Chromium/WebView supports CSS zoom and it keeps links/buttons clickable.
-                el.style.setProperty('zoom', String(state.scale), 'important');
-                el.style.setProperty('transform-origin', 'top left', 'important');
-                doc.documentElement.style.setProperty('overflow-x', 'auto', 'important');
-                doc.body.style.setProperty('overflow-x', 'auto', 'important');
-                const view = doc.querySelector('[data-testid="stAppViewContainer"]');
-                if (view) view.style.setProperty('overflow', 'auto', 'important');
+                translateX: 0.0,
+                translateY: 0.0,
+                pinchStartDistance: 0.0,
+                pinchStartScale: 1.0,
+                pinchLocalX: 0.0,
+                pinchLocalY: 0.0,
+                panStartX: 0.0,
+                panStartY: 0.0,
+                panStartTranslateX: 0.0,
+                panStartTranslateY: 0.0,
+                panning: false,
+                gestureOnStage: false,
+                MIN_SCALE: 1.0,
+                MAX_SCALE: 4.0,
               };
 
-              doc.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 2 && w.matchMedia('(orientation: landscape)').matches) {
-                  state.startDistance = distance(e.touches);
-                  state.startScale = state.scale;
+              function getStage() {
+                return doc.querySelector('.block-container')
+                  || doc.querySelector('[data-testid="stMainBlockContainer"]');
+              }
+
+              function getViewport() {
+                return doc.querySelector('[data-testid="stAppViewContainer"]')
+                  || doc.querySelector('[data-testid="stMain"]')
+                  || doc.body;
+              }
+
+              function prepareStage(stage) {
+                if (!stage) return;
+                stage.style.setProperty('transform-origin', '0 0', 'important');
+                stage.style.setProperty('will-change', 'transform', 'important');
+              }
+
+              function setTouchMode(zoomed) {
+                const app = doc.querySelector('.stApp');
+                const view = getViewport();
+                const stage = getStage();
+
+                // At 1x: normal one-finger scrolling, but native browser pinch is off.
+                // Zoomed: all one-finger movement is reserved for stage panning.
+                const mode = zoomed ? 'none' : 'pan-x pan-y';
+                for (const el of [doc.documentElement, doc.body, app, view, stage]) {
+                  if (el) el.style.setProperty('touch-action', mode, 'important');
                 }
-              }, {passive: false, capture: true});
-
-              doc.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 2 && state.startDistance > 0 && w.matchMedia('(orientation: landscape)').matches) {
-                  e.preventDefault();
-                  const ratio = distance(e.touches) / state.startDistance;
-                  applyScale(state.startScale * ratio);
+                if (view) {
+                  view.style.setProperty('overscroll-behavior', 'contain', 'important');
+                  view.style.setProperty('overflow-x', zoomed ? 'hidden' : '', 'important');
                 }
-              }, {passive: false, capture: true});
+              }
 
-              doc.addEventListener('touchend', (e) => {
-                if (e.touches.length < 2) state.startDistance = 0;
-              }, {passive: true, capture: true});
+              function applyTransform() {
+                const stage = getStage();
+                if (!stage) return;
+                prepareStage(stage);
 
-              // Re-apply after Streamlit rerenders.
-              const observer = new MutationObserver(() => {
-                if (state.scale !== 1.0) applyScale(state.scale);
+                if (state.scale <= 1.001) {
+                  state.scale = 1.0;
+                  state.translateX = 0.0;
+                  state.translateY = 0.0;
+                }
+
+                stage.style.setProperty(
+                  'transform',
+                  `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`,
+                  'important'
+                );
+                setTouchMode(state.scale > 1.001);
+              }
+
+              function distance(t0, t1) {
+                return Math.hypot(
+                  t1.clientX - t0.clientX,
+                  t1.clientY - t0.clientY
+                );
+              }
+
+              function midpoint(t0, t1) {
+                return {
+                  x: (t0.clientX + t1.clientX) / 2,
+                  y: (t0.clientY + t1.clientY) / 2,
+                };
+              }
+
+              function eventStartedOnStage(event) {
+                const stage = getStage();
+                if (!stage) return false;
+                const target = event.target;
+                return !!(target && stage.contains(target));
+              }
+
+              doc.addEventListener('touchstart', function (event) {
+                const stage = getStage();
+                if (!stage) return;
+                prepareStage(stage);
+
+                if (event.touches.length === 2) {
+                  if (!state.gestureOnStage && !eventStartedOnStage(event)) return;
+                  state.gestureOnStage = true;
+
+                  const t0 = event.touches[0];
+                  const t1 = event.touches[1];
+                  state.pinchStartDistance = Math.max(1, distance(t0, t1));
+                  state.pinchStartScale = state.scale;
+
+                  const mid = midpoint(t0, t1);
+                  const rect = stage.getBoundingClientRect();
+
+                  // rect.left/top already include the current translation.
+                  state.pinchLocalX = (mid.x - rect.left) / state.scale;
+                  state.pinchLocalY = (mid.y - rect.top) / state.scale;
+                  state.panning = false;
+                } else if (
+                  event.touches.length === 1
+                  && state.scale > 1.001
+                  && eventStartedOnStage(event)
+                ) {
+                  state.gestureOnStage = true;
+                  const t = event.touches[0];
+                  state.panStartX = t.clientX;
+                  state.panStartY = t.clientY;
+                  state.panStartTranslateX = state.translateX;
+                  state.panStartTranslateY = state.translateY;
+                  state.panning = true;
+                }
+              }, { passive: true, capture: true });
+
+              doc.addEventListener('touchmove', function (event) {
+                if (!state.gestureOnStage) return;
+                const stage = getStage();
+                if (!stage) return;
+
+                if (event.touches.length === 2 && state.pinchStartDistance > 0) {
+                  event.preventDefault();
+
+                  const t0 = event.touches[0];
+                  const t1 = event.touches[1];
+                  const newDistance = Math.max(1, distance(t0, t1));
+                  let newScale = state.pinchStartScale
+                    * (newDistance / state.pinchStartDistance);
+                  newScale = Math.max(
+                    state.MIN_SCALE,
+                    Math.min(state.MAX_SCALE, newScale)
+                  );
+
+                  const mid = midpoint(t0, t1);
+                  const rect = stage.getBoundingClientRect();
+
+                  // Recover the stage's untransformed screen origin from the
+                  // current transformed rect, then keep the pinch midpoint fixed.
+                  const baseLeft = rect.left - state.translateX;
+                  const baseTop = rect.top - state.translateY;
+
+                  state.scale = newScale;
+                  state.translateX = mid.x - baseLeft - state.pinchLocalX * state.scale;
+                  state.translateY = mid.y - baseTop - state.pinchLocalY * state.scale;
+                  applyTransform();
+                } else if (
+                  event.touches.length === 1
+                  && state.panning
+                  && state.scale > 1.001
+                ) {
+                  event.preventDefault();
+                  const t = event.touches[0];
+                  state.translateX = state.panStartTranslateX + (t.clientX - state.panStartX);
+                  state.translateY = state.panStartTranslateY + (t.clientY - state.panStartY);
+                  applyTransform();
+                }
+              }, { passive: false, capture: true });
+
+              function finishTouch(event) {
+                if (event.touches && event.touches.length < 2) {
+                  state.pinchStartDistance = 0.0;
+                }
+
+                if (!event.touches || event.touches.length === 0) {
+                  state.panning = false;
+                  state.gestureOnStage = false;
+
+                  if (state.scale <= 1.03) {
+                    state.scale = 1.0;
+                    state.translateX = 0.0;
+                    state.translateY = 0.0;
+                  }
+                  applyTransform();
+                }
+              }
+
+              doc.addEventListener('touchend', finishTouch, { passive: true, capture: true });
+              doc.addEventListener('touchcancel', finishTouch, { passive: true, capture: true });
+
+              // Streamlit replaces inner content on rerun. Reapply the transform
+              // so the zoom level remains stable while buttons/reruns are used.
+              const observer = new MutationObserver(function () {
+                w.requestAnimationFrame(applyTransform);
               });
-              observer.observe(doc.body, {childList: true, subtree: true});
+              observer.observe(doc.body, { childList: true, subtree: true });
+
+              state.applyTransform = applyTransform;
+              w.__taisaiStagePinchZoom = state;
+              applyTransform();
+            } else {
+              // Component recreated after a Streamlit rerun: simply reapply.
+              const controller = w.__taisaiStagePinchZoom;
+              if (controller.applyTransform) {
+                w.requestAnimationFrame(controller.applyTransform);
+              }
             }
           } catch (e) {
-            console.log('TaiSai mobile configuration:', e);
+            console.log('TaiSai stage pinch zoom:', e);
           }
         })();
         </script>
@@ -156,8 +300,7 @@ def configure_mobile_browser() -> None:
         width=0,
     )
 
-
-configure_mobile_browser()
+enable_mobile_pinch_zoom()
 
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_CAPITAL = 200_000
@@ -586,26 +729,30 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        :root {{ color-scheme: only light !important; }}
+        :root {{ color-scheme: light !important; }}
         html, body, [data-testid="stAppViewContainer"], .stApp {{
-            color-scheme: only light !important;
             background: {COLORS['page_bg']} !important;
         }}
         html, body {{
-            touch-action: pan-x pan-y pinch-zoom !important;
+            touch-action: pan-x pan-y !important;
             -webkit-text-size-adjust: 100%;
             max-width:100% !important;
         }}
         .stApp {{
-            touch-action: pan-x pan-y pinch-zoom !important;
+            touch-action: pan-x pan-y !important;
             color: #F8FAFC !important;
         }}
         [data-testid="stHeader"], [data-testid="stToolbar"], footer {{
             display: none !important;
         }}
+        [data-testid="stAppViewContainer"] {{
+            overscroll-behavior: contain !important;
+        }}
         .block-container {{
             max-width: 1660px !important;
             padding: .35rem 1rem .45rem 1rem !important;
+            transform-origin: 0 0 !important;
+            will-change: transform !important;
         }}
 
         /* Streamlit/브라우저 테마와 무관하게 글자색을 고정 */
@@ -735,7 +882,7 @@ def inject_css() -> None:
             border-radius: clamp(6px, 1.62cqw, 24px) !important;
             padding: 0 !important;
             overflow: hidden !important;
-            touch-action: pan-x pan-y pinch-zoom !important;
+            touch-action: pan-x pan-y !important;
             container-type: inline-size !important;
         }}
         .st-key-game_board > div,
@@ -842,16 +989,7 @@ def inject_css() -> None:
         .bet-visual * {{ color: #0F172A !important; -webkit-text-fill-color: #0F172A !important; }}
 
         /* 실제 주사위처럼 보이는 SVG */
-        .dice-svg {{
-            display: inline-block; vertical-align: middle; flex: 0 0 auto;
-            color-scheme: only light !important;
-            forced-color-adjust: none !important;
-            filter: none !important;
-            mix-blend-mode: normal !important;
-            background: #FFFFFF !important;
-        }}
-        .dice-svg rect {{ fill:#FFFFFF !important; stroke:#475569 !important; forced-color-adjust:none !important; }}
-        .dice-svg circle {{ fill:#000000 !important; stroke:none !important; forced-color-adjust:none !important; }}
+        .dice-svg {{ display: inline-block; vertical-align: middle; flex: 0 0 auto; }}
         .dice-xs {{ width: 18px; height: 18px; }}
         .dice-sm {{ width: 25px; height: 25px; }}
         .dice-triple {{ width: 24px; height: 24px; }}
@@ -1128,18 +1266,18 @@ def inject_css() -> None:
             .block-container {{
                 width:100% !important; max-width:100% !important;
                 padding:.28rem .28rem .38rem .28rem !important;
-                overflow-x:auto !important;
+                overflow-x:hidden !important;
             }}
             html, body, .stApp, [data-testid="stAppViewContainer"] {{
-                width:100% !important; max-width:100% !important; overflow-x:auto !important;
+                width:100% !important; max-width:100% !important; overflow-x:hidden !important;
             }}
 
             /* 모바일에서는 실제 화면의 짧은 변(vmin)을 기준으로 글자 크기를 정해
                가로모드에서도 금액 숫자가 카드 밖으로 잘리지 않게 합니다. */
             .top-title {{ font-size:clamp(15px, 4.1vmin, 24px) !important; white-space:nowrap; }}
             .metric-card {{
-                height:64px !important; min-height:64px !important; max-height:64px !important;
-                padding:7px 7px !important; border-radius:8px !important; overflow:hidden !important;
+                height:56px !important; min-height:56px !important; max-height:56px !important;
+                padding:6px 7px !important; border-radius:8px !important; overflow:hidden !important;
             }}
             .metric-label {{ font-size:clamp(9px, 2.25vmin, 12px) !important; line-height:1 !important; }}
             .metric-value {{ font-size:clamp(14px, 3.65vmin, 20px) !important; line-height:1.15 !important; letter-spacing:-.02em; }}
@@ -1164,30 +1302,6 @@ def inject_css() -> None:
             }}
             .st-key-game_board [class*="st-key-row_"] {{
                 width:100% !important; max-width:100% !important; overflow:hidden !important;
-            }}
-        }}
-
-
-        /* 세로모드는 기능을 억지로 재배치하지 않고 가로모드 전환을 안내합니다.
-           현장 테이블 비율/위치를 유지하는 것이 이 시뮬레이터의 목적입니다. */
-        @media (max-width: 900px) and (orientation: portrait) {{
-            body::after {{
-                content: "↻  가로모드로 돌려주세요\\A이 시뮬레이터는 가로모드에 최적화되어 있습니다.";
-                white-space: pre-line;
-                position: fixed;
-                inset: 0;
-                z-index: 2147483647;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                text-align: center;
-                padding: 24px;
-                box-sizing: border-box;
-                background: #0F172A;
-                color: #F8FAFC;
-                font-size: 20px;
-                font-weight: 800;
-                line-height: 1.7;
             }}
         }}
         </style>
@@ -1374,12 +1488,12 @@ def dice_svg(value: int, size_class: str = "dice-sm") -> str:
     }
     pip_color = "#000000"
     circles = "".join(
-        f'<circle cx="{x}" cy="{y}" r="8.5" style="fill:#000000!important" />'
+        f'<circle cx="{x}" cy="{y}" r="8.5" fill="{pip_color}" />'
         for x, y in pip_positions[value]
     )
     return (
-        f'<svg class="dice-svg {size_class}" viewBox="0 0 100 100" aria-hidden="true" style="background:#FFFFFF;color-scheme:only light;forced-color-adjust:none;filter:none">'
-        '<rect x="4" y="4" width="92" height="92" rx="8" style="fill:#FFFFFF!important;stroke:#475569!important" stroke-width="5"/>'
+        f'<svg class="dice-svg {size_class}" viewBox="0 0 100 100" aria-hidden="true">'
+        '<rect x="4" y="4" width="92" height="92" rx="8" fill="#FFFFFF" stroke="#475569" stroke-width="5"/>'
         f'{circles}</svg>'
     )
 
@@ -1702,7 +1816,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v10 Kakao landscape zoom / force-light dice)
+# 실행 (v11 Animation-style full-stage pinch zoom / black pips)
 # ============================================================
 init_session_state()
 inject_css()
