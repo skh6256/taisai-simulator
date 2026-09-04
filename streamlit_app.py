@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import math
 import secrets
 import subprocess
@@ -25,7 +26,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v11_stage_pinch_zoom.py"""
+    """Allow local execution with: py TaiSai_Simulator_v12_dice_darkmode_red_one.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -988,8 +989,20 @@ def inject_css() -> None:
         }}
         .bet-visual * {{ color: #0F172A !important; -webkit-text-fill-color: #0F172A !important; }}
 
-        /* 실제 주사위처럼 보이는 SVG */
-        .dice-svg {{ display: inline-block; vertical-align: middle; flex: 0 0 auto; }}
+        /* 실제 주사위처럼 보이는 SVG 이미지.
+           Android/Samsung/Kakao 등의 강제 다크모드가 주사위 내부의 흰색/검정색을
+           같은 계열로 재색칠하지 못하도록 이미지 자체를 격리한다. */
+        .dice-svg {{
+            display: inline-block;
+            vertical-align: middle;
+            flex: 0 0 auto;
+            color-scheme: only light !important;
+            forced-color-adjust: none !important;
+            filter: none !important;
+            mix-blend-mode: normal !important;
+            opacity: 1 !important;
+            background: transparent !important;
+        }}
         .dice-xs {{ width: 18px; height: 18px; }}
         .dice-sm {{ width: 25px; height: 25px; }}
         .dice-triple {{ width: 24px; height: 24px; }}
@@ -1477,7 +1490,12 @@ def open_bet_dialog(bet_id: str) -> None:
 
 
 def dice_svg(value: int, size_class: str = "dice-sm") -> str:
-    """Return a font-independent inline SVG die with fixed black pips for light/dark browser themes."""
+    """Return a dark-mode-resistant die image.
+
+    The SVG is embedded as a data-URI <img> instead of inline SVG so browser/WebView
+    forced-dark processing is much less likely to recolor the face and pips together.
+    Die 1 uses a red center pip; every other die uses black pips.
+    """
     pip_positions = {
         1: [(50, 50)],
         2: [(28, 28), (72, 72)],
@@ -1486,15 +1504,35 @@ def dice_svg(value: int, size_class: str = "dice-sm") -> str:
         5: [(28, 28), (72, 28), (50, 50), (28, 72), (72, 72)],
         6: [(28, 24), (72, 24), (28, 50), (72, 50), (28, 76), (72, 76)],
     }
-    pip_color = "#000000"
+
+    # 카지노 주사위 관례처럼 1의 한 점만 빨간색, 나머지는 검정색.
+    pip_color = "#E00000" if value == 1 else "#000000"
     circles = "".join(
-        f'<circle cx="{x}" cy="{y}" r="8.5" fill="{pip_color}" />'
+        f'<circle cx="{x}" cy="{y}" r="8.5" '
+        f'fill="{pip_color}" style="fill:{pip_color} !important" />'
         for x, y in pip_positions[value]
     )
+
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" '
+        'style="color-scheme:only light;forced-color-adjust:none">'
+        '<style>'
+        ':root{color-scheme:only light}'
+        'svg,*{forced-color-adjust:none!important}'
+        '</style>'
+        '<rect x="4" y="4" width="92" height="92" rx="8" '
+        'fill="#FFFFFF" stroke="#475569" stroke-width="5" '
+        'style="fill:#FFFFFF !important;stroke:#475569 !important"/>'
+        f'{circles}'
+        '</svg>'
+    )
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return (
-        f'<svg class="dice-svg {size_class}" viewBox="0 0 100 100" aria-hidden="true">'
-        '<rect x="4" y="4" width="92" height="92" rx="8" fill="#FFFFFF" stroke="#475569" stroke-width="5"/>'
-        f'{circles}</svg>'
+        f'<img class="dice-svg {size_class}" '
+        f'src="data:image/svg+xml;base64,{encoded}" '
+        'alt="" aria-hidden="true" draggable="false" '
+        'style="color-scheme:only light !important;forced-color-adjust:none !important;'
+        'filter:none !important;mix-blend-mode:normal !important;" />'
     )
 
 
@@ -1816,7 +1854,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v11 Animation-style full-stage pinch zoom / black pips)
+# 실행 (v12 stage pinch zoom / dark-mode-safe dice / red pip on 1)
 # ============================================================
 init_session_state()
 inject_css()
