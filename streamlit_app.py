@@ -26,7 +26,7 @@ def _running_inside_streamlit() -> bool:
 
 
 def _launch_with_streamlit_if_needed() -> None:
-    """Allow local execution with: py TaiSai_Simulator_v12_dice_darkmode_red_one.py"""
+    """Allow local execution with: py TaiSai_Simulator_v13_png_dice_bottom_safearea.py"""
     if __name__ == "__main__" and not _running_inside_streamlit():
         script_path = str(Path(__file__).resolve())
         cmd = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -989,9 +989,8 @@ def inject_css() -> None:
         }}
         .bet-visual * {{ color: #0F172A !important; -webkit-text-fill-color: #0F172A !important; }}
 
-        /* 실제 주사위처럼 보이는 SVG 이미지.
-           Android/Samsung/Kakao 등의 강제 다크모드가 주사위 내부의 흰색/검정색을
-           같은 계열로 재색칠하지 못하도록 이미지 자체를 격리한다. */
+        /* 주사위는 실제 픽셀로 만든 PNG 이미지로 표시한다.
+           SVG 자체를 강제 다크모드가 재색칠하는 문제를 피하기 위한 방식이다. */
         .dice-svg {{
             display: inline-block;
             vertical-align: middle;
@@ -1002,6 +1001,9 @@ def inject_css() -> None:
             mix-blend-mode: normal !important;
             opacity: 1 !important;
             background: transparent !important;
+            isolation: isolate !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
         }}
         .dice-xs {{ width: 18px; height: 18px; }}
         .dice-sm {{ width: 25px; height: 25px; }}
@@ -1278,7 +1280,9 @@ def inject_css() -> None:
         @media (max-width: 900px) {{
             .block-container {{
                 width:100% !important; max-width:100% !important;
-                padding:.28rem .28rem .38rem .28rem !important;
+                /* Streamlit Cloud의 우하단 관리 오버레이가 게임판을 가리지 않도록
+                   실제 콘텐츠 뒤에 스크롤 가능한 안전 여백을 확보합니다. */
+                padding:.28rem .28rem calc(88px + env(safe-area-inset-bottom, 0px)) .28rem !important;
                 overflow-x:hidden !important;
             }}
             html, body, .stApp, [data-testid="stAppViewContainer"] {{
@@ -1489,13 +1493,86 @@ def open_bet_dialog(bet_id: str) -> None:
     bet_dialog(bet_id)
 
 
-def dice_svg(value: int, size_class: str = "dice-sm") -> str:
-    """Return a dark-mode-resistant die image.
+_DICE_PNG_B64_CACHE: dict[int, str] = {}
 
-    The SVG is embedded as a data-URI <img> instead of inline SVG so browser/WebView
-    forced-dark processing is much less likely to recolor the face and pips together.
-    Die 1 uses a red center pip; every other die uses black pips.
+
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    """Build one PNG chunk using only the Python standard library."""
+    import struct
+    import zlib
+
+    return (
+        struct.pack(">I", len(data))
+        + chunk_type
+        + data
+        + struct.pack(">I", zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+    )
+
+
+def _dice_png_base64(value: int) -> str:
+    """Return a cached raster PNG die.
+
+    A real PNG is used rather than SVG/HTML artwork because Android WebView / Samsung
+    Internet forced-dark processing can recolor vector artwork. Raster image pixels are
+    much less likely to be modified. Die 1 has one red pip; dice 2~6 use black pips.
     """
+    cached = _DICE_PNG_B64_CACHE.get(value)
+    if cached:
+        return cached
+
+    import struct
+    import zlib
+
+    # Render at 200 x 200 and let the browser downscale it. This keeps small table dice
+    # crisp while avoiding any additional image dependency such as Pillow.
+    width = height = 200
+    rgba = bytearray(width * height * 4)
+
+    # Colors are literal image pixels, not CSS colors.
+    transparent = (255, 255, 255, 0)
+    face = (255, 255, 255, 255)
+    border = (71, 85, 105, 255)      # #475569
+    black = (0, 0, 0, 255)
+    red = (224, 0, 0, 255)           # #E00000
+
+    def put_pixel(x: int, y: int, color: tuple[int, int, int, int]) -> None:
+        i = (y * width + x) * 4
+        rgba[i:i + 4] = bytes(color)
+
+    # Start transparent so rounded corners remain natural.
+    for y in range(height):
+        for x in range(width):
+            put_pixel(x, y, transparent)
+
+    # Rounded rectangle helper. Coordinates mirror the old 100x100 SVG at 2x scale.
+    outer_left, outer_top, outer_right, outer_bottom = 8, 8, 192, 192
+    outer_radius = 16
+    inner_left, inner_top, inner_right, inner_bottom = 18, 18, 182, 182
+    inner_radius = 9
+
+    def inside_round_rect(x: float, y: float, l: float, t: float, r: float, b: float, radius: float) -> bool:
+        if l + radius <= x <= r - radius and t <= y <= b:
+            return True
+        if l <= x <= r and t + radius <= y <= b - radius:
+            return True
+        cx = l + radius if x < l + radius else r - radius
+        cy = t + radius if y < t + radius else b - radius
+        return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2
+
+    for y in range(outer_top, outer_bottom):
+        for x in range(outer_left, outer_right):
+            px = x + 0.5
+            py = y + 0.5
+            if inside_round_rect(px, py, outer_left, outer_top, outer_right, outer_bottom, outer_radius):
+                put_pixel(x, y, border)
+
+    for y in range(inner_top, inner_bottom):
+        for x in range(inner_left, inner_right):
+            px = x + 0.5
+            py = y + 0.5
+            if inside_round_rect(px, py, inner_left, inner_top, inner_right, inner_bottom, inner_radius):
+                put_pixel(x, y, face)
+
     pip_positions = {
         1: [(50, 50)],
         2: [(28, 28), (72, 72)],
@@ -1505,34 +1582,45 @@ def dice_svg(value: int, size_class: str = "dice-sm") -> str:
         6: [(28, 24), (72, 24), (28, 50), (72, 50), (28, 76), (72, 76)],
     }
 
-    # 카지노 주사위 관례처럼 1의 한 점만 빨간색, 나머지는 검정색.
-    pip_color = "#E00000" if value == 1 else "#000000"
-    circles = "".join(
-        f'<circle cx="{x}" cy="{y}" r="8.5" '
-        f'fill="{pip_color}" style="fill:{pip_color} !important" />'
-        for x, y in pip_positions[value]
-    )
+    pip_color = red if value == 1 else black
+    pip_radius = 17  # old SVG radius 8.5 at 2x
+    for cx100, cy100 in pip_positions[value]:
+        cx = cx100 * 2
+        cy = cy100 * 2
+        r2 = pip_radius * pip_radius
+        for y in range(max(0, cy - pip_radius), min(height, cy + pip_radius + 1)):
+            for x in range(max(0, cx - pip_radius), min(width, cx + pip_radius + 1)):
+                if (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r2:
+                    put_pixel(x, y, pip_color)
 
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" '
-        'style="color-scheme:only light;forced-color-adjust:none">'
-        '<style>'
-        ':root{color-scheme:only light}'
-        'svg,*{forced-color-adjust:none!important}'
-        '</style>'
-        '<rect x="4" y="4" width="92" height="92" rx="8" '
-        'fill="#FFFFFF" stroke="#475569" stroke-width="5" '
-        'style="fill:#FFFFFF !important;stroke:#475569 !important"/>'
-        f'{circles}'
-        '</svg>'
+    # PNG scanlines: filter byte 0 + RGBA row.
+    raw = bytearray()
+    stride = width * 4
+    for y in range(height):
+        raw.append(0)
+        start = y * stride
+        raw.extend(rgba[start:start + stride])
+
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + _png_chunk(b"IDAT", zlib.compress(bytes(raw), level=9))
+        + _png_chunk(b"IEND", b"")
     )
-    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    encoded = base64.b64encode(png).decode("ascii")
+    _DICE_PNG_B64_CACHE[value] = encoded
+    return encoded
+
+
+def dice_svg(value: int, size_class: str = "dice-sm") -> str:
+    """Return a raster PNG die as an <img> while preserving the existing call sites."""
+    encoded = _dice_png_base64(value)
     return (
         f'<img class="dice-svg {size_class}" '
-        f'src="data:image/svg+xml;base64,{encoded}" '
+        f'src="data:image/png;base64,{encoded}" '
         'alt="" aria-hidden="true" draggable="false" '
-        'style="color-scheme:only light !important;forced-color-adjust:none !important;'
-        'filter:none !important;mix-blend-mode:normal !important;" />'
+        'style="forced-color-adjust:none !important;filter:none !important;'
+        'mix-blend-mode:normal !important;isolation:isolate !important;" />'
     )
 
 
@@ -1854,7 +1942,7 @@ def render_game_page() -> None:
 
 
 # ============================================================
-# 실행 (v12 stage pinch zoom / dark-mode-safe dice / red pip on 1)
+# 실행 (v13 stage pinch zoom / raster PNG dice / bottom safe area)
 # ============================================================
 init_session_state()
 inject_css()
